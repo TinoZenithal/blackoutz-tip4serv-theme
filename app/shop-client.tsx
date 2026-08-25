@@ -4,7 +4,21 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import type { Product, StoreCurrency } from './products';
 
-declare global { interface Window { Tip4Serv?: { Checkout?: object } } }
+type Tip4ServCheckoutFailure = { message?: string };
+
+declare global {
+  interface Window {
+    Tip4Serv?: {
+      Checkout?: {
+        open: (options: {
+          storeId: number;
+          product: string;
+          onFail?: (failure: Tip4ServCheckoutFailure) => void;
+        }) => Promise<unknown> | unknown;
+      };
+    };
+  }
+}
 
 const currencies = ['USD', 'AUD', 'GBP', 'EUR', 'CAD', 'NZD', 'JPY', 'SGD'] as const satisfies readonly StoreCurrency[];
 type Currency = StoreCurrency;
@@ -164,6 +178,28 @@ export default function ShopClient({ products }: { products: Product[] }) {
     return currency !== product.priceCurrency && canConvert(product);
   }
 
+  function openCheckout(product: Product) {
+    const checkout = window.Tip4Serv?.Checkout;
+    if (!checkout?.open) {
+      setCheckoutError('Secure checkout is still loading. Refresh the page and try again.');
+      return;
+    }
+
+    setCheckoutError(null);
+    try {
+      const result = checkout.open({
+        storeId: 21207,
+        product: String(product.tip4servProductId ?? product.id),
+        onFail: (failure) => setCheckoutError(failure.message || 'Tip4Serv could not start this checkout. Please try again.'),
+      });
+      if (result instanceof Promise) {
+        void result.catch(() => setCheckoutError('Tip4Serv could not start this checkout. Please try again.'));
+      }
+    } catch {
+      setCheckoutError('Tip4Serv could not start this checkout. Please try again.');
+    }
+  }
+
   return <>
     <div className="store-toolbar" aria-label="Filter store products">
       {([['all', 'All gear'], ['subscription', 'Subscriptions'], ['base', 'Custom bases'], ['credits', 'Credits'], ['support', 'Support']] as const).map(([value, label]) => (
@@ -180,7 +216,7 @@ export default function ShopClient({ products }: { products: Product[] }) {
       {visibleProducts.map((product) => <article className="product" key={product.id}>
         <div className="product-media"><Image src={product.image} alt={product.imageAlt} fill sizes="(max-width: 900px) 100vw, 33vw" unoptimized={product.image.startsWith('https://')}/><span className="product-number">{product.number}</span><span className="product-perk">{product.perk}</span></div>
         <div className="product-info"><p className="product-tag">{product.tag}</p><h3>{product.name}</h3><p>{product.description}</p><small className="product-legal">{product.customAmount ? 'VOLUNTARY SUPPORT • NO IN-GAME ADVANTAGE' : 'NON-REDEEMABLE DIGITAL REWARD • NO REAL-WORLD VALUE'}</small>
-          <div className="product-action"><div><small>{product.customAmount ? 'MINIMUM DONATION' : product.billing === 'monthly' ? 'MONTHLY ACCESS' : 'ONE-TIME PURCHASE'}{isEstimated(product) && ' • EST.'}</small><strong>{product.customAmount && 'FROM '}{formatPrice(product)}{product.billing === 'monthly' && <em>/mo</em>}</strong></div><button type="button" className="tip4serv-buy-btn" data-product={String(product.tip4servProductId ?? product.id)} aria-label={`Buy ${product.name}`}>BUY NOW <b>↗</b></button></div>
+          <div className="product-action"><div><small>{product.customAmount ? 'MINIMUM DONATION' : product.billing === 'monthly' ? 'MONTHLY ACCESS' : 'ONE-TIME PURCHASE'}{isEstimated(product) && ' • EST.'}</small><strong>{product.customAmount && 'FROM '}{formatPrice(product)}{product.billing === 'monthly' && <em>/mo</em>}</strong></div><button type="button" className="blackoutz-checkout-btn" onClick={() => openCheckout(product)} aria-label={`Buy ${product.name}`}>BUY NOW <b>↗</b></button></div>
         </div>
       </article>)}
     </div>
