@@ -54,7 +54,6 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
-        <script async src="https://js.tip4serv.com/tip4serv.min.js?v=1.0.19" data-store-id="21207" />
       </body>
     </html>
   );
