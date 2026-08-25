@@ -374,7 +374,7 @@ export default function ShopClient({ products }: { products: Product[] }) {
               <label htmlFor="checkout-email">RECEIPT EMAIL</label>
               <input id="checkout-email" type="email" value={email} onChange={(event) => { setEmail(event.target.value); setCheckoutError(null); }} placeholder="you@example.com" autoComplete="email" required/>
               <label htmlFor="checkout-username">IN-GAME USERNAME</label>
-              <input id="checkout-username" type="text" value={ingameUsername} onChange={(event) => { setIngameUsername(event.target.value); setCheckoutError(null); }} placeholder="Enter your BLACKOUTZ player name" autoComplete="off" minLength={2} maxLength={80} required/>
+              <input id="checkout-username" type="text" value={ingameUsername} onChange={(event) => { setIngameUsername(event.target.value); setCheckoutError(null); }} placeholder="Enter your gamertag" autoComplete="off" minLength={2} maxLength={80} required/>
             </div>
             <div className={`discord-link-card ${discord.state === 'linked' ? 'is-linked' : ''}`}>
               <span className="discord-mark" aria-hidden="true">◆</span>
