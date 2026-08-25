@@ -12,7 +12,7 @@ const faqs = [
   ['Are these subscriptions?', 'Some products renew monthly and others are one-time purchases. Each card and checkout summary clearly identifies the billing type before payment.'],
   ['What happens after purchase?', 'Review the order here, then continue to the BLACKOUTZ-branded Tip4Serv page. Tip4Serv will link your Discord account, request your in-game username and securely complete payment.'],
   ['Can I get support?', 'Yes. Join the BLACKOUTZ Discord for purchase support, server updates, events and squad recruitment.'],
-  ['What if there is a problem with my order?', 'Open a BLACKOUTZ Discord ticket with your Tip4Serv transaction reference. Duplicate, missing or incorrect orders are reviewed individually.'],
+  ['Are purchases refundable?', 'BLACKOUTZ does not provide change-of-mind refunds for digital rewards, subscriptions already charged or supporter purchases. This does not exclude any remedy required by applicable consumer law. Duplicate charges, non-delivery or materially incorrect orders are reviewed individually through Discord support.'],
 ];
 
 const siteUrl = 'https://blackoutz-storefront.dylan-sciortino.chatgpt.site';
@@ -87,7 +87,7 @@ export default function Home() {
         <CheckoutReturn />
         <div className="section-title"><div><p className="kicker"><i /> FIELD-TESTED ADVANTAGES</p><h2>CHOOSE YOUR<br/><span>ADVANTAGE.</span></h2></div><p>Every product is built to sharpen your BLACKOUTZ experience without breaking the survival loop.</p></div>
         <ShopClient products={products} />
-        <div className="store-note"><span>!</span><p><b>Digital in-game rewards only.</b> Non-redeemable digital rewards used exclusively within our gaming environment for entertainment purposes. BLACKOUTZ Credits have no real-world monetary value.</p><a href="#faq">PURCHASE FAQ →</a></div>
+        <div className="store-note"><span>!</span><p><b>NO CHANGE-OF-MIND REFUNDS.</b> Purchases are final once confirmed, except where applicable law requires a remedy. Digital rewards and BLACKOUTZ Credits have no real-world monetary value.</p><a href="#faq">REFUND POLICY →</a></div>
       </section>
 
       <section id="network" className="network section">
@@ -117,7 +117,7 @@ export default function Home() {
 
       <section className="discord"><div className="shell discord-inner"><div><p className="kicker"><i /> COMMS CHANNEL</p><h2>DON&apos;T SURVIVE<br/><span>ALONE.</span></h2><p>Join the BLACKOUTZ community for server updates, support, events and squad recruitment.</p></div><a className="btn btn-white" href={discordUrl} target="_blank" rel="noreferrer">JOIN THE BLACKOUTZ DISCORD <b>↗</b></a></div></section>
 
-      <footer className="footer shell"><div className="brand"><span className="brand-z">Z</span><span>BLACKOUT<span>Z</span><small>SURVIVE. FIGHT. DOMINATE.</small></span></div><div><b>EXPLORE</b><a href="#store">Store</a><a href="#network">Network</a><a href={discordUrl} target="_blank" rel="noreferrer">Discord</a></div><div><b>PURCHASE INFO</b><a href="#faq">Purchase FAQ</a><Link href="/policies">Purchase & privacy</Link><a href="https://tip4serv.com/terms-of-use" target="_blank" rel="noreferrer">Tip4Serv terms</a></div><p>BLACKOUTZ is an independent gaming community and is not affiliated with Bohemia Interactive. Digital rewards have no real-world monetary value.<br/><span>© 2026 BLACKOUTZ NETWORK. ALL RIGHTS RESERVED.</span></p></footer>
+      <footer className="footer shell"><div className="brand"><span className="brand-z">Z</span><span>BLACKOUT<span>Z</span><small>SURVIVE. FIGHT. DOMINATE.</small></span></div><div><b>EXPLORE</b><a href="#store">Store</a><a href="#network">Network</a><a href={discordUrl} target="_blank" rel="noreferrer">Discord</a></div><div><b>PURCHASE INFO</b><a href="#faq">Purchase FAQ</a><Link href="/policies">Purchase, refund & privacy</Link><a href="https://tip4serv.com/terms-of-use" target="_blank" rel="noreferrer">Tip4Serv terms</a></div><p>BLACKOUTZ is an independent gaming community and is not affiliated with Bohemia Interactive. Digital rewards have no real-world monetary value.<br/><span>© 2026 BLACKOUTZ NETWORK. ALL RIGHTS RESERVED.</span></p></footer>
     </main>
   );
 }
