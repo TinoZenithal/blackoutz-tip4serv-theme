@@ -16,6 +16,7 @@ if (!homepage.body.includes('85.190.157.135:11100')) throw new Error('Homepage i
 if (!homepage.body.includes('https://discord.gg/blackout-z')) throw new Error('Homepage is missing the BLACKOUTZ Discord invite');
 if (!homepage.body.includes('US$7.99')) throw new Error('Homepage is missing the USD subscription price');
 if (!homepage.body.includes('US$1.00')) throw new Error('Homepage is missing the US$1.00 donation minimum');
+if (!homepage.body.includes('NO CHANGE-OF-MIND REFUNDS')) throw new Error('Homepage is missing the refund policy notice');
 if (!homepage.body.includes('blackoutz-checkout-btn')) throw new Error('Homepage is missing the BLACKOUTZ order-review buttons');
 if (!homepage.body.includes('VERIFY &amp; PAY WITH TIP4SERV')) throw new Error('Homepage is missing the checkout route explanation');
 if (homepage.body.includes('js.tip4serv.com/tip4serv.min.js')) throw new Error('Homepage still includes the retired popup checkout loader');
