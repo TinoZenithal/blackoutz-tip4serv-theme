@@ -126,7 +126,7 @@ function mapProduct(rawValue: unknown, index: number, categories: Tip4ServCatego
   const donation = Boolean(raw.donation) || local?.customAmount === true;
   const group = deriveGroup(name, category.name, subscription, donation);
   const apiDescription = stripHtml(raw.small_description ?? raw.description);
-  const image = tip4servImage(raw.image) || local?.image || '/products/donation.webp';
+  const image = local?.image || tip4servImage(raw.image) || '/products/donation.webp';
   const stock = asNumber(raw.stock);
 
   return {
@@ -215,3 +215,4 @@ export function apiProductId(productId: string) {
   const match = /^api-(\d+)$/.exec(productId);
   return match ? Number(match[1]) : undefined;
 }
+
