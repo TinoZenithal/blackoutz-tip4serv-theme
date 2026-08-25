@@ -1,4 +1,4 @@
-export type StoreCurrency = 'USD' | 'AUD' | 'GBP' | 'EUR' | 'CAD' | 'NZD' | 'JPY' | 'SGD';
+export type StoreCurrency = 'USD' | 'AUD' | 'GBP' | 'EUR' | 'CAD' | 'CHF';
 
 export type Product = {
   id: string;
@@ -35,3 +35,4 @@ export const products: Product[] = [
 ];
 
 export const productIds = new Set(products.map((product) => product.id));
+
