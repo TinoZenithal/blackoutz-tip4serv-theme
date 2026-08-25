@@ -32,7 +32,7 @@ Set `SITE_URL` to the deployed storefront address so Tip4Serv can return custome
 ## API-theme review links
 
 - Live demo: `https://blackoutz-storefront.dylan-sciortino.chatgpt.site`
-- Public source: add the GitHub repository URL after publishing
+- Public source: `https://github.com/TinoZenithal/blackoutz-tip4serv-theme`
 
 Tip4Serv's API Themes area links to self-hosted demos and source repositories. This project is prepared in that format; listing it in the Tip4Serv dashboard still requires Tip4Serv's review and approval.
 
@@ -66,5 +66,6 @@ npm run smoke
 - Complete one subscription and one single-payment rehearsal while the Tip4Serv store is in TEST mode.
 - Confirm every Tip4Serv product has the correct DayZ/Discord fulfilment action and player identifier configured.
 - Confirm the Donation product complies with Tip4Serv's current platform rules.
-- Decide when the hosted review site should be made public.
+- Keep the hosted review site public while Tip4Serv is reviewing the theme.
 - Add a signed Tip4Serv webhook only if BLACKOUTZ later needs custom order automation beyond Tip4Serv's built-in fulfilment.
+
