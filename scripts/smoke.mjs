@@ -34,7 +34,15 @@ await Promise.all([
   expectResponse('/manifest.webmanifest', 200, 'BLACKOUTZ'),
   expectResponse('/favicon-blackoutz-v2.png', 200),
   expectResponse('/products/donation.webp', 200),
+  expectResponse('/api/oauth/discord/session', 200, '"linked":false'),
 ]);
+
+const unauthenticatedCheckout = await fetch(`${baseUrl}/api/checkout`, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', origin: baseUrl },
+  body: JSON.stringify({ productId: 'api-0', email: 'test@example.com', ingameUsername: 'TestPlayer', currency: 'USD' }),
+});
+if (unauthenticatedCheckout.status !== 401) throw new Error(`Unauthenticated checkout returned ${unauthenticatedCheckout.status}; expected 401`);
 
 console.log('BLACKOUTZ storefront smoke checks passed.');
 

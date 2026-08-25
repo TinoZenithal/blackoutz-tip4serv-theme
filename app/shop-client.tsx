@@ -6,7 +6,10 @@ import type { Product, StoreCurrency } from './products';
 
 const currencies = ['USD', 'AUD', 'GBP', 'EUR', 'CAD', 'CHF'] as const satisfies readonly StoreCurrency[];
 type Currency = StoreCurrency;
-const TIP4SERV_STORE_ID = 21207;
+type CheckoutStep = 'review' | 'verify' | 'payment';
+type DiscordStatus = { state: 'loading' | 'unlinked' | 'linked'; displayName?: string };
+type CheckoutDraft = { productId: string; donationAmount: string; currency: Currency; email: string; ingameUsername: string };
+const CHECKOUT_DRAFT_KEY = 'blackoutz-checkout-draft-v14';
 
 const currencySymbols: Record<Currency, string> = {
   AUD: 'A$', USD: 'US$', GBP: '£', EUR: '€', CAD: 'C$', CHF: 'CHF ',
@@ -32,6 +35,7 @@ export default function ShopClient({ products }: { products: Product[] }) {
   const [catalogProducts, setCatalogProducts] = useState(products);
   const [catalogSource, setCatalogSource] = useState<'loading' | 'tip4serv' | 'fallback'>('loading');
   const [selected, setSelected] = useState<Product | null>(null);
+  const [checkoutStep, setCheckoutStep] = useState<CheckoutStep>('review');
   const [filter, setFilter] = useState<'all' | Product['group']>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [currency, setCurrency] = useState<Currency>('USD');
@@ -40,8 +44,14 @@ export default function ShopClient({ products }: { products: Product[] }) {
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [openingProductId, setOpeningProductId] = useState<string | null>(null);
   const [donationAmount, setDonationAmount] = useState('1.00');
+  const [email, setEmail] = useState('');
+  const [ingameUsername, setIngameUsername] = useState('');
+  const [discord, setDiscord] = useState<DiscordStatus>({ state: 'loading' });
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
+  const restoredCheckout = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -62,11 +72,67 @@ export default function ShopClient({ products }: { products: Product[] }) {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    async function loadDiscordSession() {
+      try {
+        const response = await fetch('/api/oauth/discord/session', { cache: 'no-store' });
+        const body = await response.json() as { linked?: unknown; displayName?: unknown };
+        if (!active) return;
+        if (response.ok && body.linked === true && typeof body.displayName === 'string') setDiscord({ state: 'linked', displayName: body.displayName });
+        else setDiscord({ state: 'unlinked' });
+      } catch {
+        if (active) setDiscord({ state: 'unlinked' });
+      }
+    }
+    void loadDiscordSession();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (restoredCheckout.current || catalogSource === 'loading') return;
+    const params = new URLSearchParams(window.location.search);
+    const discordResult = params.get('discord');
+    if (!discordResult) return;
+    restoredCheckout.current = true;
+
+    try {
+      const rawDraft = sessionStorage.getItem(CHECKOUT_DRAFT_KEY);
+      const draft = rawDraft ? JSON.parse(rawDraft) as CheckoutDraft : null;
+      const product = draft ? catalogProducts.find((candidate) => candidate.id === draft.productId) : undefined;
+      if (draft && product) {
+        queueMicrotask(() => {
+          setSelected(product);
+          setDonationAmount(draft.donationAmount || '1.00');
+          setEmail(draft.email || '');
+          setIngameUsername(draft.ingameUsername || '');
+          if (currencies.includes(draft.currency)) setCurrency(draft.currency);
+          setCheckoutStep('verify');
+          if (discordResult === 'denied') setCheckoutError('Discord linking was cancelled. Link Discord when you are ready to continue.');
+          if (discordResult === 'error') setCheckoutError('Discord could not be linked. Check the Discord application settings and try again.');
+        });
+      }
+    } catch {
+      sessionStorage.removeItem(CHECKOUT_DRAFT_KEY);
+    }
+
+    params.delete('discord');
+    const search = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash || '#store'}`);
+  }, [catalogProducts, catalogSource]);
+
+  useEffect(() => {
     if (!selected) return;
     const previousFocus = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && openingProductId === null) setSelected(null);
+      if (event.key === 'Escape' && openingProductId === null) {
+        setSelected(null);
+        setCheckoutStep('review');
+        setCheckoutError(null);
+        setReviewConfirmed(false);
+        setPaymentConfirmed(false);
+        sessionStorage.removeItem(CHECKOUT_DRAFT_KEY);
+      }
       if (event.key === 'Tab' && dialogRef.current) {
         const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button, input, [href], [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hasAttribute('disabled'));
         const first = focusable[0];
@@ -131,8 +197,7 @@ export default function ShopClient({ products }: { products: Product[] }) {
   }
 
   function formatAmount(amount: number, amountCurrency: Currency) {
-    const fractionDigits = 2;
-    return `${currencySymbols[amountCurrency]}${new Intl.NumberFormat(undefined, { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }).format(amount)}`;
+    return `${currencySymbols[amountCurrency]}${new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)}`;
   }
 
   function canConvert(product: Product) {
@@ -153,58 +218,27 @@ export default function ShopClient({ products }: { products: Product[] }) {
     return currency !== product.priceCurrency && canConvert(product);
   }
 
-  async function openCheckout(product: Product, customAmount?: number) {
+  function closeCheckout() {
+    if (openingProductId !== null) return;
+    setSelected(null);
+    setCheckoutStep('review');
     setCheckoutError(null);
-    setOpeningProductId(product.id);
-    try {
-      const productReference = typeof product.tip4servProductId === 'number'
-        ? { product_id: product.tip4servProductId }
-        : { product_slug: product.id };
-      const returnUrl = `${window.location.origin}/`;
-      const checkoutEndpoint = new URL('https://api.tip4serv.com/v1/store/checkout');
-      checkoutEndpoint.searchParams.set('store', String(TIP4SERV_STORE_ID));
-      checkoutEndpoint.searchParams.set('currency', currency);
-      const response = await fetch(checkoutEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          products: [{
-            ...productReference,
-            type: product.billing === 'monthly' ? 'subscribe' : 'addtocart',
-            quantity: 1,
-            ...(product.customAmount ? { donation_amount: customAmount } : {}),
-          }],
-          currency,
-          redirect_success_checkout: `${returnUrl}?checkout=success#store`,
-          redirect_pending_checkout: `${returnUrl}?checkout=pending#store`,
-          redirect_canceled_checkout: `${returnUrl}?checkout=canceled#store`,
-        }),
-      });
-
-      const body = await response.json() as { url?: unknown; error?: unknown };
-      if (!response.ok || typeof body.url !== 'string') {
-        throw new Error(typeof body.error === 'string' ? body.error : 'Checkout unavailable');
-      }
-
-      const checkoutUrl = new URL(body.url);
-      if (checkoutUrl.protocol !== 'https:' || (checkoutUrl.hostname !== 'tip4serv.com' && !checkoutUrl.hostname.endsWith('.tip4serv.com'))) {
-        throw new Error('Invalid checkout destination');
-      }
-      window.location.assign(checkoutUrl.toString());
-    } catch {
-      setCheckoutError('Tip4Serv could not start this checkout. Please wait a moment and try again.');
-      setOpeningProductId(null);
-    }
+    setReviewConfirmed(false);
+    setPaymentConfirmed(false);
+    sessionStorage.removeItem(CHECKOUT_DRAFT_KEY);
   }
 
   function reviewProduct(product: Product) {
     setCheckoutError(null);
     setOpeningProductId(null);
+    setCheckoutStep('review');
+    setReviewConfirmed(false);
+    setPaymentConfirmed(false);
     if (product.customAmount) setDonationAmount('1.00');
     setSelected(product);
   }
 
-  function continueToCheckout(event: FormEvent<HTMLFormElement>) {
+  function continueToVerification(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selected) return;
     const amount = selected.customAmount ? Number(donationAmount) : undefined;
@@ -212,8 +246,82 @@ export default function ShopClient({ products }: { products: Product[] }) {
       setCheckoutError('Donation amount must be between US$1.00 and US$5,000.00.');
       return;
     }
-    void openCheckout(selected, amount);
+    setCheckoutError(null);
+    setCheckoutStep('verify');
   }
+
+  function linkDiscord() {
+    if (!selected) return;
+    const draft: CheckoutDraft = { productId: selected.id, donationAmount, currency, email, ingameUsername };
+    sessionStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify(draft));
+    window.location.assign('/api/oauth/discord/start');
+  }
+
+  async function unlinkDiscord() {
+    try {
+      await fetch('/api/oauth/discord/session', { method: 'DELETE' });
+    } finally {
+      setDiscord({ state: 'unlinked' });
+      setCheckoutError(null);
+    }
+  }
+
+  function continueToPayment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setCheckoutError('Enter a valid email address for your receipt.');
+      return;
+    }
+    if (ingameUsername.trim().length < 2) {
+      setCheckoutError('Enter your in-game username.');
+      return;
+    }
+    if (discord.state !== 'linked') {
+      setCheckoutError('Link your Discord account before continuing.');
+      return;
+    }
+    setCheckoutError(null);
+    setPaymentConfirmed(false);
+    setCheckoutStep('payment');
+  }
+
+  async function openCheckout(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected || discord.state !== 'linked') return;
+    setCheckoutError(null);
+    setOpeningProductId(selected.id);
+    try {
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          productId: selected.id,
+          email: email.trim(),
+          ingameUsername: ingameUsername.trim(),
+          amount: selected.customAmount ? Number(donationAmount) : undefined,
+          currency,
+        }),
+      });
+      const body = await response.json() as { checkoutUrl?: unknown; error?: unknown };
+      if (!response.ok || typeof body.checkoutUrl !== 'string') {
+        if (response.status === 401) {
+          setDiscord({ state: 'unlinked' });
+          setCheckoutStep('verify');
+        }
+        throw new Error(typeof body.error === 'string' ? body.error : 'Secure payment unavailable.');
+      }
+      const checkoutUrl = new URL(body.checkoutUrl);
+      if (checkoutUrl.protocol !== 'https:' || (checkoutUrl.hostname !== 'tip4serv.com' && !checkoutUrl.hostname.endsWith('.tip4serv.com'))) throw new Error('Invalid checkout destination.');
+      sessionStorage.removeItem(CHECKOUT_DRAFT_KEY);
+      window.location.assign(checkoutUrl.toString());
+    } catch (error) {
+      setCheckoutError(error instanceof Error ? error.message : 'Tip4Serv could not prepare the secure payment. Please try again.');
+      setOpeningProductId(null);
+    }
+  }
+
+  const stepNumber = checkoutStep === 'review' ? 1 : checkoutStep === 'verify' ? 2 : 3;
+  const checkoutTotal = selected ? formatPrice(selected, selected.customAmount ? donationAmount : selected.price) : '';
 
   return <>
     <div className="store-toolbar" aria-label="Filter store products">
@@ -235,26 +343,70 @@ export default function ShopClient({ products }: { products: Product[] }) {
         </div>
       </article>)}
     </div>
-    {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && openingProductId === null && setSelected(null)}>
-      <section ref={dialogRef} className="checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title" aria-describedby="checkout-description">
-        <button ref={closeRef} type="button" className="modal-close" onClick={() => setSelected(null)} disabled={openingProductId !== null} aria-label="Close order review">×</button>
+    {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && closeCheckout()}>
+      <section ref={dialogRef} className={`checkout-modal checkout-step-${checkoutStep}`} role="dialog" aria-modal="true" aria-labelledby="checkout-title" aria-describedby="checkout-description">
+        <button ref={closeRef} type="button" className="modal-close" onClick={closeCheckout} disabled={openingProductId !== null} aria-label="Close checkout">×</button>
         <div className="modal-image"><Image src={selected.image} alt="" fill sizes="(max-width: 760px) 100vw, 40vw" unoptimized={selected.image.startsWith('https://')}/><span>{selected.perk}</span></div>
-        <form onSubmit={continueToCheckout} aria-busy={openingProductId !== null}>
-          <p className="kicker"><i/> {selected.customAmount ? 'COMMUNITY SUPPORT' : 'BLACKOUTZ ORDER REVIEW'}</p>
-          <h3 id="checkout-title">{selected.name}</h3>
-          <p id="checkout-description" className="modal-copy">{selected.description.length > 250 ? `${selected.description.slice(0, 247)}…` : selected.description}</p>
+        <div className="checkout-modal-content">
           <div className="checkout-route" aria-label="Checkout progress">
-            <span className="is-current"><b>01</b><em>REVIEW</em></span><i/><span><b>02</b><em>VERIFY PLAYER</em></span><i/><span><b>03</b><em>PAY</em></span>
+            {(['REVIEW', 'VERIFY PLAYER', 'PAY'] as const).map((label, index) => <span key={label} className={stepNumber === index + 1 ? 'is-current' : stepNumber > index + 1 ? 'is-complete' : ''} aria-current={stepNumber === index + 1 ? 'step' : undefined}><b>{String(index + 1).padStart(2, '0')}</b><em>{label}</em>{index < 2 && <i/>}</span>)}
           </div>
-          {selected.customAmount && <><label htmlFor="donation-amount">DONATION AMOUNT (USD)</label><input id="donation-amount" type="number" value={donationAmount} onChange={(event) => { setDonationAmount(event.target.value); setCheckoutError(null); }} min="1" max="5000" step="0.01" required inputMode="decimal"/></>}
-          <div className="modal-total"><span>{selected.customAmount ? 'DONATION TOTAL' : selected.billing === 'monthly' ? 'RECURRING MONTHLY TOTAL' : 'ONE-TIME TOTAL'}{isEstimated(selected) && ' • ESTIMATED'}</span><strong>{formatPrice(selected, selected.customAmount ? donationAmount : selected.price)}{selected.billing === 'monthly' && <em>/mo</em>}</strong></div>
-          {isEstimated(selected) && <p className="currency-disclaimer">Tip4Serv will confirm the final {currency} amount before payment. Its live conversion and any payment-provider fees may differ slightly from this estimate.</p>}
-          <p className="checkout-handoff"><b>NEXT SCREEN</b> Tip4Serv will open the BLACKOUTZ-branded verification page to link Discord, enter your in-game username and finish payment.</p>
-          <label className="confirm"><input type="checkbox" required/><span>{selected.customAmount ? 'I understand this supporter purchase includes a digital BLACKOUTZ community role and has no cash value.' : selected.billing === 'monthly' ? 'I understand this is a recurring monthly digital subscription.' : 'I understand this is a non-redeemable digital in-game reward.'}</span></label>
-          {checkoutError && <p className="checkout-error" role="alert">{checkoutError}</p>}
-          <button className="modal-submit" disabled={openingProductId !== null}><span aria-live="polite">{openingProductId !== null ? 'OPENING TIP4SERV…' : 'CONTINUE TO PLAYER VERIFICATION'}</span> <b>↗</b></button>
-          <small className="secure-note">TIP4SERV HANDLES DISCORD LINKING, PLAYER DETAILS AND PAYMENT</small>
-        </form>
+
+          {checkoutStep === 'review' && <form onSubmit={continueToVerification}>
+            <p className="kicker"><i/> {selected.customAmount ? 'COMMUNITY SUPPORT' : 'BLACKOUTZ ORDER REVIEW'}</p>
+            <h3 id="checkout-title">{selected.name}</h3>
+            <p id="checkout-description" className="modal-copy">{selected.description.length > 250 ? `${selected.description.slice(0, 247)}…` : selected.description}</p>
+            {selected.customAmount && <><label htmlFor="donation-amount">DONATION AMOUNT (USD)</label><input id="donation-amount" type="number" value={donationAmount} onChange={(event) => { setDonationAmount(event.target.value); setCheckoutError(null); }} min="1" max="5000" step="0.01" required inputMode="decimal"/></>}
+            <div className="modal-total"><span>{selected.customAmount ? 'DONATION TOTAL' : selected.billing === 'monthly' ? 'RECURRING MONTHLY TOTAL' : 'ONE-TIME TOTAL'}{isEstimated(selected) && ' • ESTIMATED'}</span><strong>{checkoutTotal}{selected.billing === 'monthly' && <em>/mo</em>}</strong></div>
+            {isEstimated(selected) && <p className="currency-disclaimer">Tip4Serv will confirm the final {currency} amount before payment. Its live conversion and any payment-provider fees may differ slightly from this estimate.</p>}
+            <label className="confirm"><input type="checkbox" checked={reviewConfirmed} onChange={(event) => setReviewConfirmed(event.target.checked)} required/><span>{selected.customAmount ? 'I understand this supporter purchase includes a digital BLACKOUTZ community role and has no cash value.' : selected.billing === 'monthly' ? 'I understand this is a recurring monthly digital subscription.' : 'I understand this is a non-redeemable digital in-game reward.'}</span></label>
+            {checkoutError && <p className="checkout-error" role="alert">{checkoutError}</p>}
+            <button className="modal-submit"><span>CONTINUE TO PLAYER VERIFICATION</span> <b>↗</b></button>
+            <small className="secure-note">STEP 01 OF 03 • REVIEW YOUR BLACKOUTZ ORDER</small>
+          </form>}
+
+          {checkoutStep === 'verify' && <form onSubmit={continueToPayment}>
+            <button className="checkout-back" type="button" onClick={() => { setCheckoutStep('review'); setCheckoutError(null); }}>← BACK TO ORDER REVIEW</button>
+            <p className="kicker"><i/> PLAYER VERIFICATION</p>
+            <h3 id="checkout-title">VERIFY YOUR OPERATOR.</h3>
+            <p id="checkout-description" className="modal-copy">These details let Tip4Serv match the purchase to the right BLACKOUTZ player and run your configured Discord fulfilment.</p>
+            <div className="verify-fields">
+              <label htmlFor="checkout-email">RECEIPT EMAIL</label>
+              <input id="checkout-email" type="email" value={email} onChange={(event) => { setEmail(event.target.value); setCheckoutError(null); }} placeholder="you@example.com" autoComplete="email" required/>
+              <label htmlFor="checkout-username">IN-GAME USERNAME</label>
+              <input id="checkout-username" type="text" value={ingameUsername} onChange={(event) => { setIngameUsername(event.target.value); setCheckoutError(null); }} placeholder="Enter your BLACKOUTZ player name" autoComplete="off" minLength={2} maxLength={80} required/>
+            </div>
+            <div className={`discord-link-card ${discord.state === 'linked' ? 'is-linked' : ''}`}>
+              <span className="discord-mark" aria-hidden="true">◆</span>
+              <div><small>DISCORD CONNECTION</small><strong>{discord.state === 'loading' ? 'CHECKING CONNECTION…' : discord.state === 'linked' ? `LINKED AS ${discord.displayName}` : 'LINK DISCORD TO CONTINUE'}</strong><p>Your numeric Discord ID stays hidden and is sent only to Tip4Serv when checkout begins.</p></div>
+              {discord.state === 'linked' ? <button type="button" onClick={() => void unlinkDiscord()}>CHANGE</button> : <button type="button" onClick={linkDiscord} disabled={discord.state === 'loading'}>LINK DISCORD ↗</button>}
+            </div>
+            {checkoutError && <p className="checkout-error" role="alert">{checkoutError}</p>}
+            <button className="modal-submit" disabled={discord.state === 'loading'}><span>CONTINUE TO PAYMENT REVIEW</span> <b>↗</b></button>
+            <small className="secure-note">STEP 02 OF 03 • SECURE DISCORD OAUTH • NO RAW ID ENTRY</small>
+          </form>}
+
+          {checkoutStep === 'payment' && <form onSubmit={openCheckout} aria-busy={openingProductId !== null}>
+            <button className="checkout-back" type="button" onClick={() => { setCheckoutStep('verify'); setCheckoutError(null); }} disabled={openingProductId !== null}>← BACK TO PLAYER DETAILS</button>
+            <p className="kicker"><i/> SECURE PAYMENT REVIEW</p>
+            <h3 id="checkout-title">FINAL CHECK.</h3>
+            <p id="checkout-description" className="modal-copy">Confirm the operator, order and billing details below. Tip4Serv or its payment provider will collect the protected payment details on the next secure screen.</p>
+            <div className="payment-review">
+              <div><span>PRODUCT</span><strong>{selected.name}</strong></div>
+              <div><span>PLAYER</span><strong>{ingameUsername}</strong></div>
+              <div><span>DISCORD</span><strong>{discord.displayName} • LINKED</strong></div>
+              <div><span>RECEIPT</span><strong>{email}</strong></div>
+              <div><span>BILLING</span><strong>{selected.billing === 'monthly' ? 'RECURRING MONTHLY' : 'ONE-TIME'}</strong></div>
+              <div><span>CURRENCY</span><strong>{currency}{isEstimated(selected) ? ' • ESTIMATE' : ''}</strong></div>
+            </div>
+            <div className="payment-gateway"><span aria-hidden="true">⌁</span><div><small>PROTECTED PAYMENT GATEWAY</small><strong>CARD / AVAILABLE TIP4SERV METHODS</strong><p>Payment credentials never pass through or remain on the BLACKOUTZ site.</p></div><b>256-BIT</b></div>
+            <div className="modal-total"><span>{selected.billing === 'monthly' ? 'RECURRING TOTAL' : selected.customAmount ? 'DONATION TOTAL' : 'ORDER TOTAL'}{isEstimated(selected) && ' • ESTIMATED'}</span><strong>{checkoutTotal}{selected.billing === 'monthly' && <em>/mo</em>}</strong></div>
+            <label className="confirm"><input type="checkbox" checked={paymentConfirmed} onChange={(event) => setPaymentConfirmed(event.target.checked)} required/><span>I confirm these player and order details are correct and I am ready to continue to Tip4Serv&apos;s protected payment controls.</span></label>
+            {checkoutError && <p className="checkout-error" role="alert">{checkoutError}</p>}
+            <button className="modal-submit" disabled={openingProductId !== null}><span aria-live="polite">{openingProductId !== null ? 'PREPARING SECURE PAYMENT…' : 'CONTINUE TO SECURE PAYMENT'}</span> <b>↗</b></button>
+            <small className="secure-note">STEP 03 OF 03 • TIP4SERV PROCESSES THE FINAL PAYMENT</small>
+          </form>}
+        </div>
       </section>
     </div>}
   </>;
