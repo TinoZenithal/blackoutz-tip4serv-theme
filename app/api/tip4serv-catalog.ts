@@ -48,7 +48,7 @@ function normalizeName(value: string) {
 }
 
 function normalizeCurrency(value: unknown): StoreCurrency {
-  const supported: StoreCurrency[] = ['USD', 'AUD', 'GBP', 'EUR', 'CAD', 'NZD', 'JPY', 'SGD'];
+  const supported: StoreCurrency[] = ['USD', 'AUD', 'GBP', 'EUR', 'CAD', 'CHF'];
   const currency = asString(value)?.toUpperCase() as StoreCurrency | undefined;
   return currency && supported.includes(currency) ? currency : 'USD';
 }
