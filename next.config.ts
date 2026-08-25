@@ -2,14 +2,15 @@ import type { NextConfig } from 'next';
 
 const contentSecurityPolicy = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''}`,
+  `script-src 'self' 'unsafe-inline' https://js.tip4serv.com${process.env.NODE_ENV === 'development' ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://cdn.tip4serv.com",
   "font-src 'self' data:",
-  "connect-src 'self' https://api.frankfurter.dev",
+  "connect-src 'self' https://api.frankfurter.dev https://api.tip4serv.com https://tip4serv.com https://*.tip4serv.com",
+  "frame-src https://tip4serv.com https://*.tip4serv.com",
   "object-src 'none'",
   "base-uri 'self'",
-  "form-action 'self'",
+  "form-action 'self' https://tip4serv.com https://*.tip4serv.com",
   "frame-ancestors 'none'",
 ].join('; ');
 
@@ -36,3 +37,4 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+
