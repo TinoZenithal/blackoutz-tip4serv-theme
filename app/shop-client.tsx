@@ -4,11 +4,12 @@ import { FormEvent, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import type { Product, StoreCurrency } from './products';
 
-const currencies = ['USD', 'AUD', 'GBP', 'EUR', 'CAD', 'NZD', 'JPY', 'SGD'] as const satisfies readonly StoreCurrency[];
+const currencies = ['USD', 'AUD', 'GBP', 'EUR', 'CAD', 'CHF'] as const satisfies readonly StoreCurrency[];
 type Currency = StoreCurrency;
+const TIP4SERV_STORE_ID = 21207;
 
 const currencySymbols: Record<Currency, string> = {
-  AUD: 'A$', USD: 'US$', GBP: '£', EUR: '€', CAD: 'C$', NZD: 'NZ$', JPY: '¥', SGD: 'S$',
+  AUD: 'A$', USD: 'US$', GBP: '£', EUR: '€', CAD: 'C$', CHF: 'CHF ',
 };
 
 const euroRegions = new Set(['AT', 'BE', 'CY', 'DE', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PT', 'SI', 'SK']);
@@ -20,9 +21,7 @@ function detectCurrency(): Currency {
     if (region === 'US') return 'USD';
     if (region === 'GB') return 'GBP';
     if (region === 'CA') return 'CAD';
-    if (region === 'NZ') return 'NZD';
-    if (region === 'JP') return 'JPY';
-    if (region === 'SG') return 'SGD';
+    if (region === 'CH' || region === 'LI') return 'CHF';
     if (region && euroRegions.has(region)) return 'EUR';
     if (region === 'AU') return 'AUD';
   }
@@ -132,7 +131,7 @@ export default function ShopClient({ products }: { products: Product[] }) {
   }
 
   function formatAmount(amount: number, amountCurrency: Currency) {
-    const fractionDigits = amountCurrency === 'JPY' ? 0 : 2;
+    const fractionDigits = 2;
     return `${currencySymbols[amountCurrency]}${new Intl.NumberFormat(undefined, { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }).format(amount)}`;
   }
 
@@ -162,11 +161,20 @@ export default function ShopClient({ products }: { products: Product[] }) {
         ? { product_id: product.tip4servProductId }
         : { product_slug: product.id };
       const returnUrl = `${window.location.origin}/`;
-      const response = await fetch('https://api.tip4serv.com/v1/store/checkout?store=21207', {
+      const checkoutEndpoint = new URL('https://api.tip4serv.com/v1/store/checkout');
+      checkoutEndpoint.searchParams.set('store', String(TIP4SERV_STORE_ID));
+      checkoutEndpoint.searchParams.set('currency', currency);
+      const response = await fetch(checkoutEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          products: [{ ...productReference, quantity: 1, ...(product.customAmount ? { donation_amount: customAmount } : {}) }],
+          products: [{
+            ...productReference,
+            type: product.billing === 'monthly' ? 'subscribe' : 'addtocart',
+            quantity: 1,
+            ...(product.customAmount ? { donation_amount: customAmount } : {}),
+          }],
+          currency,
           redirect_success_checkout: `${returnUrl}?checkout=success#store`,
           redirect_pending_checkout: `${returnUrl}?checkout=pending#store`,
           redirect_canceled_checkout: `${returnUrl}?checkout=canceled#store`,
@@ -222,7 +230,7 @@ export default function ShopClient({ products }: { products: Product[] }) {
     <div className="product-grid">
       {visibleProducts.map((product) => <article className="product" key={product.id}>
         <div className="product-media"><Image src={product.image} alt={product.imageAlt} fill sizes="(max-width: 900px) 100vw, 33vw" unoptimized={product.image.startsWith('https://')}/><span className="product-number">{product.number}</span><span className="product-perk">{product.perk}</span></div>
-        <div className="product-info"><p className="product-tag">{product.tag}</p><h3>{product.name}</h3><p>{product.description}</p><small className="product-legal">{product.customAmount ? 'VOLUNTARY SUPPORT • NO IN-GAME ADVANTAGE' : 'NON-REDEEMABLE DIGITAL REWARD • NO REAL-WORLD VALUE'}</small>
+        <div className="product-info"><p className="product-tag">{product.tag}</p><h3>{product.name}</h3><p>{product.description}</p><small className="product-legal">{product.customAmount ? 'INCLUDES A BLACKOUTZ SUPPORTER ROLE • NO CASH VALUE' : 'NON-REDEEMABLE DIGITAL REWARD • NO REAL-WORLD VALUE'}</small>
           <div className="product-action"><div><small>{product.customAmount ? 'MINIMUM DONATION' : product.billing === 'monthly' ? 'MONTHLY ACCESS' : 'ONE-TIME PURCHASE'}{isEstimated(product) && ' • EST.'}</small><strong>{product.customAmount && 'FROM '}{formatPrice(product)}{product.billing === 'monthly' && <em>/mo</em>}</strong></div><button type="button" className="blackoutz-checkout-btn" onClick={() => reviewProduct(product)} aria-label={`Review ${product.name}`}>BUY NOW <b>↗</b></button></div>
         </div>
       </article>)}
@@ -235,13 +243,17 @@ export default function ShopClient({ products }: { products: Product[] }) {
           <p className="kicker"><i/> {selected.customAmount ? 'COMMUNITY SUPPORT' : 'BLACKOUTZ ORDER REVIEW'}</p>
           <h3 id="checkout-title">{selected.name}</h3>
           <p id="checkout-description" className="modal-copy">{selected.description.length > 250 ? `${selected.description.slice(0, 247)}…` : selected.description}</p>
+          <div className="checkout-route" aria-label="Checkout progress">
+            <span className="is-current"><b>01</b><em>REVIEW</em></span><i/><span><b>02</b><em>VERIFY PLAYER</em></span><i/><span><b>03</b><em>PAY</em></span>
+          </div>
           {selected.customAmount && <><label htmlFor="donation-amount">DONATION AMOUNT (USD)</label><input id="donation-amount" type="number" value={donationAmount} onChange={(event) => { setDonationAmount(event.target.value); setCheckoutError(null); }} min="1" max="5000" step="0.01" required inputMode="decimal"/></>}
           <div className="modal-total"><span>{selected.customAmount ? 'DONATION TOTAL' : selected.billing === 'monthly' ? 'RECURRING MONTHLY TOTAL' : 'ONE-TIME TOTAL'}{isEstimated(selected) && ' • ESTIMATED'}</span><strong>{formatPrice(selected, selected.customAmount ? donationAmount : selected.price)}{selected.billing === 'monthly' && <em>/mo</em>}</strong></div>
-          {isEstimated(selected) && <p className="currency-disclaimer">Final Tip4Serv charge: {formatAmount(Number(selected.customAmount ? donationAmount || selected.price : selected.price), selected.priceCurrency)} {selected.priceCurrency}. Your payment provider determines the exact converted amount and any fees.</p>}
-          <label className="confirm"><input type="checkbox" required/><span>{selected.customAmount ? 'I understand this is a voluntary contribution to support BLACKOUTZ.' : selected.billing === 'monthly' ? 'I understand this is a recurring monthly digital subscription.' : 'I understand this is a non-redeemable digital in-game reward.'}</span></label>
+          {isEstimated(selected) && <p className="currency-disclaimer">Tip4Serv will confirm the final {currency} amount before payment. Its live conversion and any payment-provider fees may differ slightly from this estimate.</p>}
+          <p className="checkout-handoff"><b>NEXT SCREEN</b> Tip4Serv will open the BLACKOUTZ-branded verification page to link Discord, enter your in-game username and finish payment.</p>
+          <label className="confirm"><input type="checkbox" required/><span>{selected.customAmount ? 'I understand this supporter purchase includes a digital BLACKOUTZ community role and has no cash value.' : selected.billing === 'monthly' ? 'I understand this is a recurring monthly digital subscription.' : 'I understand this is a non-redeemable digital in-game reward.'}</span></label>
           {checkoutError && <p className="checkout-error" role="alert">{checkoutError}</p>}
-          <button className="modal-submit" disabled={openingProductId !== null}><span aria-live="polite">{openingProductId !== null ? 'OPENING TIP4SERV…' : 'CONTINUE TO SECURE CHECKOUT'}</span> <b>↗</b></button>
-          <small className="secure-note">TIP4SERV HANDLES ACCOUNT AND PAYMENT DETAILS ON THE NEXT SCREEN</small>
+          <button className="modal-submit" disabled={openingProductId !== null}><span aria-live="polite">{openingProductId !== null ? 'OPENING TIP4SERV…' : 'CONTINUE TO PLAYER VERIFICATION'}</span> <b>↗</b></button>
+          <small className="secure-note">TIP4SERV HANDLES DISCORD LINKING, PLAYER DETAILS AND PAYMENT</small>
         </form>
       </section>
     </div>}
