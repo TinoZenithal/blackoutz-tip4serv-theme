@@ -10,7 +10,7 @@ const discordUrl = 'https://discord.gg/blackout-z';
 const faqs = [
   ['How fast is delivery?', 'Tip4Serv confirms payment first, then delivery follows the fulfilment rules configured for that BLACKOUTZ reward. Some in-game rewards may require you to be online.'],
   ['Are these subscriptions?', 'Some products renew monthly and others are one-time purchases. Each card and checkout summary clearly identifies the billing type before payment.'],
-  ['What happens after purchase?', 'Enter the requested player identifier, complete payment through Tip4Serv and follow any fulfilment instructions shown for your selected reward.'],
+  ['What happens after purchase?', 'Review the order here, then continue to the BLACKOUTZ-branded Tip4Serv page. Tip4Serv will link your Discord account, request your in-game username and securely complete payment.'],
   ['Can I get support?', 'Yes. Join the BLACKOUTZ Discord for purchase support, server updates, events and squad recruitment.'],
   ['What if there is a problem with my order?', 'Open a BLACKOUTZ Discord ticket with your Tip4Serv transaction reference. Duplicate, missing or incorrect orders are reviewed individually.'],
 ];
@@ -105,7 +105,7 @@ export default function Home() {
 
       <section id="how" className="how section shell">
         <div className="section-title compact"><div><p className="kicker"><i /> DEPLOYMENT PROCESS</p><h2>THREE STEPS.<br/><span>CLEAR ROUTE.</span></h2></div></div>
-        <div className="steps"><article><span>01</span><div><b>SELECT YOUR ADVANTAGE</b><p>Choose the product or subscription that fits your play style.</p></div></article><article><span>02</span><div><b>COMPLETE SECURE CHECKOUT</b><p>Enter the player details requested by Tip4Serv and confirm payment.</p></div></article><article><span>03</span><div><b>OPEN A SUPPORT TICKET</b><p>Contact BLACKOUTZ in Discord so staff can track and complete fulfilment.</p></div></article></div>
+        <div className="steps"><article><span>01</span><div><b>SELECT YOUR ADVANTAGE</b><p>Choose the product or subscription that fits your play style.</p></div></article><article><span>02</span><div><b>VERIFY &amp; PAY WITH TIP4SERV</b><p>Link Discord, enter your in-game username and approve the secure payment.</p></div></article><article><span>03</span><div><b>OPEN A SUPPORT TICKET</b><p>Contact BLACKOUTZ in Discord so staff can track and complete fulfilment.</p></div></article></div>
       </section>
 
       <section className="manifesto"><div className="manifesto-bg"/><div className="shell"><p>THE DARK DOESN&apos;T<br/>CARE WHO YOU WERE.</p><h2>IT ONLY REVEALS<br/><span>WHO YOU ARE.</span></h2><a className="btn btn-red" href="#store">PREPARE YOUR LOADOUT <b>↗</b></a></div></section>
@@ -121,3 +121,4 @@ export default function Home() {
     </main>
   );
 }
+
