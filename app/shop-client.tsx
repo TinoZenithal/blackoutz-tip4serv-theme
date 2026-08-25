@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import type { Product, StoreCurrency } from './products';
 
+declare global { interface Window { Tip4Serv?: { Checkout?: object } } }
+
 const currencies = ['USD', 'AUD', 'GBP', 'EUR', 'CAD', 'NZD', 'JPY', 'SGD'] as const satisfies readonly StoreCurrency[];
 type Currency = StoreCurrency;
 
@@ -37,6 +39,43 @@ export default function ShopClient({ products }: { products: Product[] }) {
   const [currency, setCurrency] = useState<Currency>('USD');
   const [rates, setRates] = useState<Record<string, number>>({ USD: 1 });
   const [ratesStatus, setRatesStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const script = document.querySelector<HTMLScriptElement>('script[src*="js.tip4serv.com/tip4serv.min.js"]');
+    if (window.Tip4Serv?.Checkout) return;
+
+    function handleLoad() {
+      if (window.Tip4Serv?.Checkout) {
+        setCheckoutError(null);
+      } else {
+        setCheckoutError('Secure checkout did not finish loading. Refresh the page and try again.');
+      }
+    }
+
+    function handleError() {
+      setCheckoutError('Secure checkout is temporarily unavailable. Refresh the page and try again.');
+    }
+
+    const readyCheck = window.setInterval(() => {
+      if (!window.Tip4Serv?.Checkout) return;
+      window.clearInterval(readyCheck);
+      setCheckoutError(null);
+    }, 100);
+    const loadTimeout = window.setTimeout(() => {
+      window.clearInterval(readyCheck);
+      if (!window.Tip4Serv?.Checkout) handleError();
+    }, 10_000);
+
+    script?.addEventListener('load', handleLoad);
+    script?.addEventListener('error', handleError);
+    return () => {
+      window.clearInterval(readyCheck);
+      window.clearTimeout(loadTimeout);
+      script?.removeEventListener('load', handleLoad);
+      script?.removeEventListener('error', handleError);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -136,6 +175,7 @@ export default function ShopClient({ products }: { products: Product[] }) {
       </select><small aria-live="polite">{ratesStatus === 'loading' ? 'LOADING RATES' : ratesStatus === 'ready' ? currency === 'USD' ? 'USD BASE PRICE' : 'ESTIMATED PRICE' : 'USD BASE ONLY'}</small></label>
       <span className="catalog-source" data-source={catalogSource}>{catalogSource === 'tip4serv' ? 'LIVE TIP4SERV CATALOG' : catalogSource === 'loading' ? 'SYNCING TIP4SERV…' : 'BRANDED FALLBACK'} • {visibleProducts.length.toString().padStart(2, '0')} PRODUCTS</span>
     </div>
+    {checkoutError && <p className="checkout-launch-error" role="alert"><b>CHECKOUT ALERT</b>{checkoutError}</p>}
     <div className="product-grid">
       {visibleProducts.map((product) => <article className="product" key={product.id}>
         <div className="product-media"><Image src={product.image} alt={product.imageAlt} fill sizes="(max-width: 900px) 100vw, 33vw" unoptimized={product.image.startsWith('https://')}/><span className="product-number">{product.number}</span><span className="product-perk">{product.perk}</span></div>
