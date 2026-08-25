@@ -1,9 +1,8 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import type { Product, StoreCurrency } from './products';
-import { checkoutIdentifiers, identifierField, type CheckoutIdentifier } from './checkout-identifiers';
 
 const currencies = ['USD', 'AUD', 'GBP', 'EUR', 'CAD', 'NZD', 'JPY', 'SGD'] as const satisfies readonly StoreCurrency[];
 type Currency = StoreCurrency;
@@ -13,8 +12,6 @@ const currencySymbols: Record<Currency, string> = {
 };
 
 const euroRegions = new Set(['AT', 'BE', 'CY', 'DE', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PT', 'SI', 'SK']);
-
-const checkoutIdentifierSet = new Set<string>(checkoutIdentifiers);
 
 function detectCurrency(): Currency {
   const locales = navigator.languages?.length ? navigator.languages : [navigator.language];
@@ -35,21 +32,11 @@ function detectCurrency(): Currency {
 export default function ShopClient({ products }: { products: Product[] }) {
   const [catalogProducts, setCatalogProducts] = useState(products);
   const [catalogSource, setCatalogSource] = useState<'loading' | 'tip4serv' | 'fallback'>('loading');
-  const [selected, setSelected] = useState<Product | null>(null);
   const [filter, setFilter] = useState<'all' | Product['group']>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [identifiers, setIdentifiers] = useState<CheckoutIdentifier[]>([]);
-  const [identifierValues, setIdentifierValues] = useState<Partial<Record<CheckoutIdentifier, string>>>({});
-  const [identifierStatus, setIdentifierStatus] = useState<'idle' | 'loading' | 'ready' | 'fallback'>('idle');
-  const [donationAmount, setDonationAmount] = useState('5.00');
-  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
-  const [message, setMessage] = useState('');
   const [currency, setCurrency] = useState<Currency>('USD');
   const [rates, setRates] = useState<Record<string, number>>({ USD: 1 });
   const [ratesStatus, setRatesStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
-  const closeRef = useRef<HTMLButtonElement>(null);
-  const firstIdentifierRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -105,83 +92,6 @@ export default function ShopClient({ products }: { products: Product[] }) {
     return () => { active = false; };
   }, []);
 
-  useEffect(() => {
-    if (!selected) return;
-    const previousFocus = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSelected(null);
-      if (event.key === 'Tab' && dialogRef.current) {
-        const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button, input, [href], [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hasAttribute('disabled'));
-        const first = focusable[0]; const last = focusable.at(-1);
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-      }
-    };
-    document.addEventListener('keydown', handleKey);
-    document.body.classList.add('modal-open');
-    return () => { document.removeEventListener('keydown', handleKey); document.body.classList.remove('modal-open'); previousFocus?.focus(); };
-  }, [selected]);
-
-  useEffect(() => {
-    if (!selected) return;
-
-    const selectedProduct = selected;
-    const controller = new AbortController();
-    const fallback: CheckoutIdentifier[] = selectedProduct.customAmount ? ['email'] : ['email', 'ingame_username'];
-    async function loadIdentifiers() {
-      try {
-        const response = await fetch(`/api/checkout/identifiers?productId=${encodeURIComponent(selectedProduct.id)}`, { signal: controller.signal });
-        const body = await response.json() as { identifiers?: unknown; source?: unknown };
-        if (!response.ok || !Array.isArray(body.identifiers)) throw new Error('Requirements unavailable');
-        const resolved = Array.from(new Set(body.identifiers.filter((value): value is CheckoutIdentifier => typeof value === 'string' && checkoutIdentifierSet.has(value))));
-        if (!resolved.includes('email')) resolved.unshift('email');
-        if (!resolved.length) throw new Error('Requirements unavailable');
-        setIdentifiers(resolved);
-        setIdentifierStatus(body.source === 'fallback' ? 'fallback' : 'ready');
-      } catch {
-        if (controller.signal.aborted) return;
-        setIdentifiers(fallback);
-        setIdentifierStatus('fallback');
-      }
-    }
-    void loadIdentifiers();
-    return () => controller.abort();
-  }, [selected]);
-
-  useEffect(() => {
-    if (identifierStatus === 'ready' || identifierStatus === 'fallback') firstIdentifierRef.current?.focus();
-  }, [identifierStatus]);
-
-  async function checkout(event: FormEvent) {
-    event.preventDefault();
-    if (!selected || identifierStatus === 'loading' || identifiers.some((identifier) => !identifierValues[identifier]?.trim())) return;
-    if (selected.customAmount) {
-      const amount = Number(donationAmount);
-      if (!Number.isFinite(amount) || amount < 1 || amount > 5000) return;
-    }
-    setStatus('loading'); setMessage('');
-    const form = new FormData();
-    form.set('productId', selected.id);
-    for (const identifier of identifiers) form.set(`identifier:${identifier}`, identifierValues[identifier]?.trim() || '');
-    if (selected.customAmount) form.set('amount', donationAmount);
-    try {
-      const response = await fetch('/api/checkout', { method: 'POST', body: form });
-      const body = await response.json().catch(() => ({})) as { checkoutUrl?: unknown; error?: unknown; identifiers?: unknown };
-      if (response.ok && typeof body.checkoutUrl === 'string') { window.location.assign(body.checkoutUrl); return; }
-      if (response.status === 409 && Array.isArray(body.identifiers)) {
-        const updatedIdentifiers = Array.from(new Set(body.identifiers.filter((value): value is CheckoutIdentifier => typeof value === 'string' && checkoutIdentifierSet.has(value))));
-        if (updatedIdentifiers.length) {
-          setIdentifiers(updatedIdentifiers);
-          setIdentifierStatus('ready');
-        }
-      }
-      setStatus('error'); setMessage(typeof body.error === 'string' ? body.error : 'Checkout could not be started. Please try again.');
-    } catch {
-      setStatus('error'); setMessage('Connection lost. Check your network and try again.');
-    }
-  }
-
   const categoryNames = Array.from(new Set(catalogProducts.map((product) => product.categoryName).filter((value): value is string => Boolean(value))));
   const groupProducts = filter === 'all' ? catalogProducts : catalogProducts.filter((product) => product.group === filter);
   const visibleProducts = categoryFilter === 'all' ? groupProducts : groupProducts.filter((product) => product.categoryName === categoryFilter);
@@ -230,32 +140,10 @@ export default function ShopClient({ products }: { products: Product[] }) {
       {visibleProducts.map((product) => <article className="product" key={product.id}>
         <div className="product-media"><Image src={product.image} alt={product.imageAlt} fill sizes="(max-width: 900px) 100vw, 33vw" unoptimized={product.image.startsWith('https://')}/><span className="product-number">{product.number}</span><span className="product-perk">{product.perk}</span></div>
         <div className="product-info"><p className="product-tag">{product.tag}</p><h3>{product.name}</h3><p>{product.description}</p><small className="product-legal">{product.customAmount ? 'VOLUNTARY SUPPORT • NO IN-GAME ADVANTAGE' : 'NON-REDEEMABLE DIGITAL REWARD • NO REAL-WORLD VALUE'}</small>
-          <div className="product-action"><div><small>{product.customAmount ? 'MINIMUM DONATION' : product.billing === 'monthly' ? 'MONTHLY ACCESS' : 'ONE-TIME PURCHASE'}{isEstimated(product) && ' • EST.'}</small><strong>{product.customAmount && 'FROM '}{formatPrice(product)}{product.billing === 'monthly' && <em>/mo</em>}</strong></div><button type="button" onClick={() => { setIdentifiers([]); setIdentifierStatus('loading'); setSelected(product); setStatus('idle'); setMessage(''); }} aria-label={`Configure ${product.name}`}>CONFIGURE <b>↗</b></button></div>
+          <div className="product-action"><div><small>{product.customAmount ? 'MINIMUM DONATION' : product.billing === 'monthly' ? 'MONTHLY ACCESS' : 'ONE-TIME PURCHASE'}{isEstimated(product) && ' • EST.'}</small><strong>{product.customAmount && 'FROM '}{formatPrice(product)}{product.billing === 'monthly' && <em>/mo</em>}</strong></div><button type="button" className="tip4serv-buy-btn" data-product={String(product.tip4servProductId ?? product.id)} aria-label={`Buy ${product.name}`}>BUY NOW <b>↗</b></button></div>
         </div>
       </article>)}
     </div>
-    {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setSelected(null)}>
-      <section ref={dialogRef} className="checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title" aria-describedby="checkout-description">
-        <button ref={closeRef} className="modal-close" onClick={() => setSelected(null)} aria-label="Close checkout">×</button>
-        <div className="modal-image"><Image src={selected.image} alt="" fill sizes="(max-width: 760px) 100vw, 40vw" unoptimized={selected.image.startsWith('https://')}/><span>{selected.perk}</span></div>
-        <form onSubmit={checkout} aria-busy={status === 'loading' || identifierStatus === 'loading'}>
-          <p className="kicker"><i/> {selected.customAmount ? 'COMMUNITY SUPPORT' : 'LOADOUT CONFIGURATION'}</p><h3 id="checkout-title">{selected.name}</h3>
-          <p id="checkout-description" className="modal-copy">{selected.customAmount ? 'Choose how much you would like to contribute towards the BLACKOUTZ server and community. The minimum donation is US$1.00.' : 'Provide the details Tip4Serv needs for this product so the reward reaches the correct survivor.'}</p>
-          {identifierStatus === 'loading' ? <p className="identifier-loading" role="status"><i/> CHECKING TIP4SERV REQUIREMENTS…</p> : identifiers.map((identifier, index) => {
-            const field = identifierField(identifier);
-            const id = `checkout-${identifier.replaceAll('_', '-')}`;
-            return <div className="identifier-field" key={identifier}><label htmlFor={id}>{field.label}</label><input ref={index === 0 ? firstIdentifierRef : undefined} id={id} type={field.type} value={identifierValues[identifier] || ''} onChange={(event) => { setIdentifierValues((values) => ({ ...values, [identifier]: event.target.value })); if (status === 'error') { setStatus('idle'); setMessage(''); } }} placeholder={field.placeholder} minLength={identifier === 'email' ? undefined : 2} maxLength={identifier === 'email' ? 254 : 160} required autoComplete={field.autoComplete} autoCapitalize="none" spellCheck={false}/></div>;
-          })}
-          {identifierStatus === 'fallback' && <p className="identifier-fallback">Using the standard BLACKOUTZ checkout fields. Tip4Serv will verify them before payment.</p>}
-          {selected.customAmount && <><label htmlFor="donation-amount">DONATION AMOUNT (USD)</label><input id="donation-amount" type="number" value={donationAmount} onChange={(event) => { setDonationAmount(event.target.value); if (status === 'error') { setStatus('idle'); setMessage(''); } }} min="1" max="5000" step="0.01" required inputMode="decimal"/></>}
-          <div className="modal-total"><span>{selected.customAmount ? 'DONATION TOTAL' : selected.billing === 'monthly' ? 'RECURRING MONTHLY TOTAL' : 'ONE-TIME TOTAL'}{isEstimated(selected) && ' • ESTIMATED'}</span><strong>{formatPrice(selected, selected.customAmount ? donationAmount : selected.price)}</strong></div>
-          {isEstimated(selected) && <p className="currency-disclaimer">Final checkout charge: {formatAmount(Number(selected.customAmount ? donationAmount || selected.price : selected.price), selected.priceCurrency)} {selected.priceCurrency}. Your payment provider determines the exact converted amount and any fees.</p>}
-          <label className="confirm"><input type="checkbox" required/><span>{selected.customAmount ? 'I understand this is a voluntary contribution to support BLACKOUTZ.' : selected.billing === 'monthly' ? 'I understand this is a recurring monthly digital subscription.' : 'I understand this is a non-redeemable digital in-game reward.'}</span></label>
-          {message && <p className="checkout-error" role="alert">{message}</p>}
-          <button className="modal-submit" disabled={status === 'loading' || identifierStatus === 'loading'}><span aria-live="polite">{identifierStatus === 'loading' ? 'CHECKING REQUIREMENTS…' : status === 'loading' ? 'CONTACTING TIP4SERV…' : 'CONTINUE TO SECURE CHECKOUT'}</span> <b>↗</b></button>
-          <small className="secure-note">SECURE SERVER-SIDE CHECKOUT • API KEYS NEVER REACH YOUR BROWSER</small>
-        </form>
-      </section>
-    </div>}
   </>;
 }
+
