@@ -12,7 +12,8 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm run build",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "verify:tip4serv": "node scripts/verify-tip4serv.mjs"
   },
   "dependencies": {
     "next": "16.2.6",
@@ -40,3 +41,4 @@
   },
   "type": "module"
 }
+
