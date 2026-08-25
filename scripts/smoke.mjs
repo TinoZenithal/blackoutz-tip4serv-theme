@@ -16,6 +16,9 @@ if (!homepage.body.includes('85.190.157.135:11100')) throw new Error('Homepage i
 if (!homepage.body.includes('https://discord.gg/blackout-z')) throw new Error('Homepage is missing the BLACKOUTZ Discord invite');
 if (!homepage.body.includes('US$7.99')) throw new Error('Homepage is missing the USD subscription price');
 if (!homepage.body.includes('US$1.00')) throw new Error('Homepage is missing the US$1.00 donation minimum');
+if (!homepage.body.includes('tip4serv-buy-btn')) throw new Error('Homepage is missing the official Tip4Serv checkout buttons');
+if (!homepage.body.includes('js.tip4serv.com/tip4serv.min.js')) throw new Error('Homepage is missing the official Tip4Serv checkout loader');
+if (homepage.body.includes('DISCORD USER ID')) throw new Error('Homepage still renders a manual Discord ID field');
 if (homepage.response.headers.get('x-frame-options') !== 'DENY') throw new Error('Homepage is missing anti-framing protection');
 if (!homepage.response.headers.get('content-security-policy')?.includes("frame-ancestors 'none'")) throw new Error('Homepage is missing its content security policy');
 if (homepage.response.headers.get('cross-origin-resource-policy') !== 'same-origin') throw new Error('Homepage is missing its resource isolation policy');
@@ -54,3 +57,4 @@ const crossOriginResponse = await fetch(`${baseUrl}/api/checkout`, { method: 'PO
 if (crossOriginResponse.status !== 403) throw new Error(`Cross-origin checkout returned ${crossOriginResponse.status}; expected 403`);
 
 console.log('BLACKOUTZ storefront smoke checks passed.');
+
