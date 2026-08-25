@@ -1,7 +1,8 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
 
-const targetCurrencies = ['AUD', 'GBP', 'EUR', 'CAD', 'NZD', 'JPY', 'SGD'] as const;
+// Keep this list aligned with the currencies accepted by Tip4Serv checkout.
+const targetCurrencies = ['AUD', 'GBP', 'EUR', 'CAD', 'CHF'] as const;
 
 type RateResponse = {
   date?: unknown;
@@ -39,3 +40,4 @@ export async function GET() {
     });
   }
 }
+
