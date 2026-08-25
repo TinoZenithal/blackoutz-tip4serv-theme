@@ -136,6 +136,7 @@ function mapProduct(rawValue: unknown, index: number, categories: Tip4ServCatego
     tag: (category.name || local?.tag || (subscription ? 'SUBSCRIPTION' : 'TIP4SERV PRODUCT')).toUpperCase(),
     name,
     description: local?.description || apiDescription || 'Digital BLACKOUTZ reward fulfilled through Tip4Serv.',
+    details: local?.details,
     price: price.toFixed(2),
     priceCurrency: currency,
     image,
