@@ -16,14 +16,13 @@ if (!homepage.body.includes('85.190.157.135:11100')) throw new Error('Homepage i
 if (!homepage.body.includes('https://discord.gg/blackout-z')) throw new Error('Homepage is missing the BLACKOUTZ Discord invite');
 if (!homepage.body.includes('US$7.99')) throw new Error('Homepage is missing the USD subscription price');
 if (!homepage.body.includes('US$1.00')) throw new Error('Homepage is missing the US$1.00 donation minimum');
-if (!homepage.body.includes('tip4serv-buy-btn')) throw new Error('Homepage is missing the official Tip4Serv checkout buttons');
-if (!homepage.body.includes('js.tip4serv.com/tip4serv.min.js')) throw new Error('Homepage is missing the official Tip4Serv checkout loader');
-if (!homepage.body.includes('tip4serv.min.js?v=1.0.19')) throw new Error('Homepage is not using the current Tip4Serv checkout loader');
+if (!homepage.body.includes('blackoutz-checkout-btn')) throw new Error('Homepage is missing the BLACKOUTZ order-review buttons');
+if (homepage.body.includes('js.tip4serv.com/tip4serv.min.js')) throw new Error('Homepage still includes the retired popup checkout loader');
 if (homepage.body.includes('DISCORD USER ID')) throw new Error('Homepage still renders a manual Discord ID field');
 if (homepage.response.headers.get('x-frame-options') !== 'DENY') throw new Error('Homepage is missing anti-framing protection');
 if (!homepage.response.headers.get('content-security-policy')?.includes("frame-ancestors 'none'")) throw new Error('Homepage is missing its content security policy');
 if (homepage.response.headers.get('cross-origin-resource-policy') !== 'same-origin') throw new Error('Homepage is missing its resource isolation policy');
-if (homepage.response.headers.get('cross-origin-opener-policy') !== 'same-origin-allow-popups') throw new Error('Homepage is not allowing the Tip4Serv checkout popup');
+if (homepage.response.headers.get('cross-origin-opener-policy') !== 'same-origin-allow-popups') throw new Error('Homepage is missing its checkout navigation policy');
 
 await Promise.all([
   expectResponse('/api/catalog', 200, '"products"'),
