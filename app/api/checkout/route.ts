@@ -46,6 +46,31 @@ function cleanText(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function safeTip4ServError(value: unknown) {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[email]')
+    .replace(/\b\d{7,}\b/g, '[identifier]')
+    .replace(/[<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240);
+}
+
+function checkoutRejectionMessage(providerError: string) {
+  if (/discord.+does not exist|discord.+not found|unknown discord/i.test(providerError)) {
+    return 'Tip4Serv could not verify the linked Discord account. Make sure that account has joined the BLACKOUTZ Discord, then unlink and reconnect Discord before trying again.';
+  }
+  if (/already.+subscri|subscri.+already|active subscription/i.test(providerError)) {
+    return 'Tip4Serv says this player already has an active subscription for that product. Try a different product or manage the existing subscription first.';
+  }
+  if (/required|missing/i.test(providerError)) {
+    return `Tip4Serv needs more information before payment. ${providerError}`;
+  }
+  if (providerError) return `Tip4Serv rejected this checkout: ${providerError}`;
+  return 'Tip4Serv could not prepare the secure payment. Please check your details and try again.';
+}
+
 export async function POST(request: NextRequest) {
   if (!requestOriginAllowed(request)) return NextResponse.json({ error: 'This checkout request did not come from BLACKOUTZ.' }, { status: 403 });
   if (checkoutRateLimited(request)) return NextResponse.json({ error: 'Too many checkout attempts. Please wait one minute and try again.' }, { status: 429, headers: { 'retry-after': '60' } });
@@ -122,8 +147,6 @@ export async function POST(request: NextRequest) {
   try {
     const endpoint = new URL(`${TIP4SERV_API_BASE}/store/checkout`);
     endpoint.searchParams.set('store', storeId);
-    endpoint.searchParams.set('currency', currency);
-    endpoint.searchParams.set('redirect', 'true');
     response = await fetch(endpoint, {
       method: 'POST',
       headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
@@ -135,7 +158,6 @@ export async function POST(request: NextRequest) {
           ...(product.customAmount ? { donation_amount: Number(donationAmount.toFixed(2)) } : {}),
         }],
         user,
-        currency,
         redirect_success_checkout: redirectUrl('success'),
         redirect_canceled_checkout: redirectUrl('canceled'),
         redirect_pending_checkout: redirectUrl('pending'),
@@ -147,9 +169,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Tip4Serv is temporarily unreachable. Please try again shortly.' }, { status: 502 });
   }
 
-  const result = await response.json().catch(() => null) as { url?: unknown; error?: unknown } | null;
+  const result = await response.json().catch(() => null) as { url?: unknown; error?: unknown; message?: unknown; details?: unknown } | null;
   if (!response.ok || !result || typeof result.url !== 'string') {
-    return NextResponse.json({ error: 'Tip4Serv could not prepare the secure payment. Please check your details and try again.' }, { status: response.status >= 400 && response.status < 500 ? response.status : 502 });
+    const providerError = safeTip4ServError(result?.error ?? result?.message ?? result?.details);
+    console.error(JSON.stringify({ event: 'tip4serv_checkout_rejected', status: response.status, reason: providerError || 'No provider reason returned' }));
+    return NextResponse.json(
+      { error: checkoutRejectionMessage(providerError) },
+      { status: response.status >= 400 && response.status < 500 ? response.status : 502 },
+    );
   }
 
   try {
