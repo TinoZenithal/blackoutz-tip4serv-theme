@@ -4,22 +4,6 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import type { Product, StoreCurrency } from './products';
 
-type Tip4ServCheckoutFailure = { message?: string };
-
-declare global {
-  interface Window {
-    Tip4Serv?: {
-      Checkout?: {
-        open: (options: {
-          storeId: number;
-          product: string;
-          onFail?: (failure: Tip4ServCheckoutFailure) => void;
-        }) => Promise<unknown> | unknown;
-      };
-    };
-  }
-}
-
 const currencies = ['USD', 'AUD', 'GBP', 'EUR', 'CAD', 'NZD', 'JPY', 'SGD'] as const satisfies readonly StoreCurrency[];
 type Currency = StoreCurrency;
 
@@ -54,42 +38,7 @@ export default function ShopClient({ products }: { products: Product[] }) {
   const [rates, setRates] = useState<Record<string, number>>({ USD: 1 });
   const [ratesStatus, setRatesStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const script = document.querySelector<HTMLScriptElement>('script[src*="js.tip4serv.com/tip4serv.min.js"]');
-    if (window.Tip4Serv?.Checkout) return;
-
-    function handleLoad() {
-      if (window.Tip4Serv?.Checkout) {
-        setCheckoutError(null);
-      } else {
-        setCheckoutError('Secure checkout did not finish loading. Refresh the page and try again.');
-      }
-    }
-
-    function handleError() {
-      setCheckoutError('Secure checkout is temporarily unavailable. Refresh the page and try again.');
-    }
-
-    const readyCheck = window.setInterval(() => {
-      if (!window.Tip4Serv?.Checkout) return;
-      window.clearInterval(readyCheck);
-      setCheckoutError(null);
-    }, 100);
-    const loadTimeout = window.setTimeout(() => {
-      window.clearInterval(readyCheck);
-      if (!window.Tip4Serv?.Checkout) handleError();
-    }, 10_000);
-
-    script?.addEventListener('load', handleLoad);
-    script?.addEventListener('error', handleError);
-    return () => {
-      window.clearInterval(readyCheck);
-      window.clearTimeout(loadTimeout);
-      script?.removeEventListener('load', handleLoad);
-      script?.removeEventListener('error', handleError);
-    };
-  }, []);
+  const [openingProductId, setOpeningProductId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -178,25 +127,38 @@ export default function ShopClient({ products }: { products: Product[] }) {
     return currency !== product.priceCurrency && canConvert(product);
   }
 
-  function openCheckout(product: Product) {
-    const checkout = window.Tip4Serv?.Checkout;
-    if (!checkout?.open) {
-      setCheckoutError('Secure checkout is still loading. Refresh the page and try again.');
-      return;
-    }
-
+  async function openCheckout(product: Product) {
     setCheckoutError(null);
+    setOpeningProductId(product.id);
     try {
-      const result = checkout.open({
-        storeId: 21207,
-        product: String(product.tip4servProductId ?? product.id),
-        onFail: (failure) => setCheckoutError(failure.message || 'Tip4Serv could not start this checkout. Please try again.'),
+      const productReference = typeof product.tip4servProductId === 'number'
+        ? { product_id: product.tip4servProductId }
+        : { product_slug: product.id };
+      const returnUrl = `${window.location.origin}/`;
+      const response = await fetch('https://api.tip4serv.com/v1/store/checkout?store=21207', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          products: [{ ...productReference, quantity: 1 }],
+          redirect_success_checkout: `${returnUrl}?checkout=success#store`,
+          redirect_pending_checkout: `${returnUrl}?checkout=pending#store`,
+          redirect_canceled_checkout: `${returnUrl}?checkout=canceled#store`,
+        }),
       });
-      if (result instanceof Promise) {
-        void result.catch(() => setCheckoutError('Tip4Serv could not start this checkout. Please try again.'));
+
+      const body = await response.json() as { url?: unknown; error?: unknown };
+      if (!response.ok || typeof body.url !== 'string') {
+        throw new Error(typeof body.error === 'string' ? body.error : 'Checkout unavailable');
       }
+
+      const checkoutUrl = new URL(body.url);
+      if (checkoutUrl.protocol !== 'https:' || (checkoutUrl.hostname !== 'tip4serv.com' && !checkoutUrl.hostname.endsWith('.tip4serv.com'))) {
+        throw new Error('Invalid checkout destination');
+      }
+      window.location.assign(checkoutUrl.toString());
     } catch {
-      setCheckoutError('Tip4Serv could not start this checkout. Please try again.');
+      setCheckoutError('Tip4Serv could not start this checkout. Please wait a moment and try again.');
+      setOpeningProductId(null);
     }
   }
 
@@ -216,7 +178,7 @@ export default function ShopClient({ products }: { products: Product[] }) {
       {visibleProducts.map((product) => <article className="product" key={product.id}>
         <div className="product-media"><Image src={product.image} alt={product.imageAlt} fill sizes="(max-width: 900px) 100vw, 33vw" unoptimized={product.image.startsWith('https://')}/><span className="product-number">{product.number}</span><span className="product-perk">{product.perk}</span></div>
         <div className="product-info"><p className="product-tag">{product.tag}</p><h3>{product.name}</h3><p>{product.description}</p><small className="product-legal">{product.customAmount ? 'VOLUNTARY SUPPORT • NO IN-GAME ADVANTAGE' : 'NON-REDEEMABLE DIGITAL REWARD • NO REAL-WORLD VALUE'}</small>
-          <div className="product-action"><div><small>{product.customAmount ? 'MINIMUM DONATION' : product.billing === 'monthly' ? 'MONTHLY ACCESS' : 'ONE-TIME PURCHASE'}{isEstimated(product) && ' • EST.'}</small><strong>{product.customAmount && 'FROM '}{formatPrice(product)}{product.billing === 'monthly' && <em>/mo</em>}</strong></div><button type="button" className="blackoutz-checkout-btn" onClick={() => openCheckout(product)} aria-label={`Buy ${product.name}`}>BUY NOW <b>↗</b></button></div>
+          <div className="product-action"><div><small>{product.customAmount ? 'MINIMUM DONATION' : product.billing === 'monthly' ? 'MONTHLY ACCESS' : 'ONE-TIME PURCHASE'}{isEstimated(product) && ' • EST.'}</small><strong>{product.customAmount && 'FROM '}{formatPrice(product)}{product.billing === 'monthly' && <em>/mo</em>}</strong></div><button type="button" className="blackoutz-checkout-btn" onClick={() => void openCheckout(product)} disabled={openingProductId !== null} aria-label={`Buy ${product.name}`}>{openingProductId === product.id ? 'OPENING…' : 'BUY NOW'} <b>↗</b></button></div>
         </div>
       </article>)}
     </div>
