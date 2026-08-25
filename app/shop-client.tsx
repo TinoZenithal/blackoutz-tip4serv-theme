@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import type { Product, StoreCurrency } from './products';
 
@@ -32,6 +32,7 @@ function detectCurrency(): Currency {
 export default function ShopClient({ products }: { products: Product[] }) {
   const [catalogProducts, setCatalogProducts] = useState(products);
   const [catalogSource, setCatalogSource] = useState<'loading' | 'tip4serv' | 'fallback'>('loading');
+  const [selected, setSelected] = useState<Product | null>(null);
   const [filter, setFilter] = useState<'all' | Product['group']>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [currency, setCurrency] = useState<Currency>('USD');
@@ -39,6 +40,9 @@ export default function ShopClient({ products }: { products: Product[] }) {
   const [ratesStatus, setRatesStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [openingProductId, setOpeningProductId] = useState<string | null>(null);
+  const [donationAmount, setDonationAmount] = useState('1.00');
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -57,6 +61,29 @@ export default function ShopClient({ products }: { products: Product[] }) {
     void loadCatalog();
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!selected) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && openingProductId === null) setSelected(null);
+      if (event.key === 'Tab' && dialogRef.current) {
+        const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button, input, [href], [tabindex]:not([tabindex="-1"])')).filter((element) => !element.hasAttribute('disabled'));
+        const first = focusable[0];
+        const last = focusable.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
+    document.addEventListener('keydown', handleKey);
+    document.body.classList.add('modal-open');
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.classList.remove('modal-open');
+      previousFocus?.focus();
+    };
+  }, [openingProductId, selected]);
 
   useEffect(() => {
     let active = true;
@@ -127,7 +154,7 @@ export default function ShopClient({ products }: { products: Product[] }) {
     return currency !== product.priceCurrency && canConvert(product);
   }
 
-  async function openCheckout(product: Product) {
+  async function openCheckout(product: Product, customAmount?: number) {
     setCheckoutError(null);
     setOpeningProductId(product.id);
     try {
@@ -139,7 +166,7 @@ export default function ShopClient({ products }: { products: Product[] }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          products: [{ ...productReference, quantity: 1 }],
+          products: [{ ...productReference, quantity: 1, ...(product.customAmount ? { donation_amount: customAmount } : {}) }],
           redirect_success_checkout: `${returnUrl}?checkout=success#store`,
           redirect_pending_checkout: `${returnUrl}?checkout=pending#store`,
           redirect_canceled_checkout: `${returnUrl}?checkout=canceled#store`,
@@ -162,6 +189,24 @@ export default function ShopClient({ products }: { products: Product[] }) {
     }
   }
 
+  function reviewProduct(product: Product) {
+    setCheckoutError(null);
+    setOpeningProductId(null);
+    if (product.customAmount) setDonationAmount('1.00');
+    setSelected(product);
+  }
+
+  function continueToCheckout(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected) return;
+    const amount = selected.customAmount ? Number(donationAmount) : undefined;
+    if (selected.customAmount && (!Number.isFinite(amount) || (amount ?? 0) < 1 || (amount ?? 0) > 5000)) {
+      setCheckoutError('Donation amount must be between US$1.00 and US$5,000.00.');
+      return;
+    }
+    void openCheckout(selected, amount);
+  }
+
   return <>
     <div className="store-toolbar" aria-label="Filter store products">
       {([['all', 'All gear'], ['subscription', 'Subscriptions'], ['base', 'Custom bases'], ['credits', 'Credits'], ['support', 'Support']] as const).map(([value, label]) => (
@@ -173,15 +218,33 @@ export default function ShopClient({ products }: { products: Product[] }) {
       </select><small aria-live="polite">{ratesStatus === 'loading' ? 'LOADING RATES' : ratesStatus === 'ready' ? currency === 'USD' ? 'USD BASE PRICE' : 'ESTIMATED PRICE' : 'USD BASE ONLY'}</small></label>
       <span className="catalog-source" data-source={catalogSource}>{catalogSource === 'tip4serv' ? 'LIVE TIP4SERV CATALOG' : catalogSource === 'loading' ? 'SYNCING TIP4SERV…' : 'BRANDED FALLBACK'} • {visibleProducts.length.toString().padStart(2, '0')} PRODUCTS</span>
     </div>
-    {checkoutError && <p className="checkout-launch-error" role="alert"><b>CHECKOUT ALERT</b>{checkoutError}</p>}
+    {checkoutError && !selected && <p className="checkout-launch-error" role="alert"><b>CHECKOUT ALERT</b>{checkoutError}</p>}
     <div className="product-grid">
       {visibleProducts.map((product) => <article className="product" key={product.id}>
         <div className="product-media"><Image src={product.image} alt={product.imageAlt} fill sizes="(max-width: 900px) 100vw, 33vw" unoptimized={product.image.startsWith('https://')}/><span className="product-number">{product.number}</span><span className="product-perk">{product.perk}</span></div>
         <div className="product-info"><p className="product-tag">{product.tag}</p><h3>{product.name}</h3><p>{product.description}</p><small className="product-legal">{product.customAmount ? 'VOLUNTARY SUPPORT • NO IN-GAME ADVANTAGE' : 'NON-REDEEMABLE DIGITAL REWARD • NO REAL-WORLD VALUE'}</small>
-          <div className="product-action"><div><small>{product.customAmount ? 'MINIMUM DONATION' : product.billing === 'monthly' ? 'MONTHLY ACCESS' : 'ONE-TIME PURCHASE'}{isEstimated(product) && ' • EST.'}</small><strong>{product.customAmount && 'FROM '}{formatPrice(product)}{product.billing === 'monthly' && <em>/mo</em>}</strong></div><button type="button" className="blackoutz-checkout-btn" onClick={() => void openCheckout(product)} disabled={openingProductId !== null} aria-label={`Buy ${product.name}`}>{openingProductId === product.id ? 'OPENING…' : 'BUY NOW'} <b>↗</b></button></div>
+          <div className="product-action"><div><small>{product.customAmount ? 'MINIMUM DONATION' : product.billing === 'monthly' ? 'MONTHLY ACCESS' : 'ONE-TIME PURCHASE'}{isEstimated(product) && ' • EST.'}</small><strong>{product.customAmount && 'FROM '}{formatPrice(product)}{product.billing === 'monthly' && <em>/mo</em>}</strong></div><button type="button" className="blackoutz-checkout-btn" onClick={() => reviewProduct(product)} aria-label={`Review ${product.name}`}>BUY NOW <b>↗</b></button></div>
         </div>
       </article>)}
     </div>
+    {selected && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && openingProductId === null && setSelected(null)}>
+      <section ref={dialogRef} className="checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title" aria-describedby="checkout-description">
+        <button ref={closeRef} type="button" className="modal-close" onClick={() => setSelected(null)} disabled={openingProductId !== null} aria-label="Close order review">×</button>
+        <div className="modal-image"><Image src={selected.image} alt="" fill sizes="(max-width: 760px) 100vw, 40vw" unoptimized={selected.image.startsWith('https://')}/><span>{selected.perk}</span></div>
+        <form onSubmit={continueToCheckout} aria-busy={openingProductId !== null}>
+          <p className="kicker"><i/> {selected.customAmount ? 'COMMUNITY SUPPORT' : 'BLACKOUTZ ORDER REVIEW'}</p>
+          <h3 id="checkout-title">{selected.name}</h3>
+          <p id="checkout-description" className="modal-copy">{selected.description.length > 250 ? `${selected.description.slice(0, 247)}…` : selected.description}</p>
+          {selected.customAmount && <><label htmlFor="donation-amount">DONATION AMOUNT (USD)</label><input id="donation-amount" type="number" value={donationAmount} onChange={(event) => { setDonationAmount(event.target.value); setCheckoutError(null); }} min="1" max="5000" step="0.01" required inputMode="decimal"/></>}
+          <div className="modal-total"><span>{selected.customAmount ? 'DONATION TOTAL' : selected.billing === 'monthly' ? 'RECURRING MONTHLY TOTAL' : 'ONE-TIME TOTAL'}{isEstimated(selected) && ' • ESTIMATED'}</span><strong>{formatPrice(selected, selected.customAmount ? donationAmount : selected.price)}{selected.billing === 'monthly' && <em>/mo</em>}</strong></div>
+          {isEstimated(selected) && <p className="currency-disclaimer">Final Tip4Serv charge: {formatAmount(Number(selected.customAmount ? donationAmount || selected.price : selected.price), selected.priceCurrency)} {selected.priceCurrency}. Your payment provider determines the exact converted amount and any fees.</p>}
+          <label className="confirm"><input type="checkbox" required/><span>{selected.customAmount ? 'I understand this is a voluntary contribution to support BLACKOUTZ.' : selected.billing === 'monthly' ? 'I understand this is a recurring monthly digital subscription.' : 'I understand this is a non-redeemable digital in-game reward.'}</span></label>
+          {checkoutError && <p className="checkout-error" role="alert">{checkoutError}</p>}
+          <button className="modal-submit" disabled={openingProductId !== null}><span aria-live="polite">{openingProductId !== null ? 'OPENING TIP4SERV…' : 'CONTINUE TO SECURE CHECKOUT'}</span> <b>↗</b></button>
+          <small className="secure-note">TIP4SERV HANDLES ACCOUNT AND PAYMENT DETAILS ON THE NEXT SCREEN</small>
+        </form>
+      </section>
+    </div>}
   </>;
 }
 
